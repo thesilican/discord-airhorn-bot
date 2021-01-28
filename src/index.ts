@@ -1,9 +1,4 @@
-import {
-  Command,
-  CommandClient,
-  Interaction,
-} from "@thesilican/slash-commando";
-import Discord from "discord.js";
+import Discord, { Client, VoiceChannel } from "discord.js";
 import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
@@ -53,59 +48,40 @@ class AirHornPlayer {
     this.connection = null;
   }
 
-  play() {
-    if (!this.connection || !this.shouldPlay) {
+  async play() {
+    if (!this.shouldPlay) {
+      this.disconnect();
       this.dispatcher = null;
       return;
     }
-    this.dispatcher = this.connection.play(airHornStream());
+    if (!this.connection) {
+      await this.connect();
+    }
+    this.dispatcher = this.connection!.play(airHornStream());
     this.dispatcher.on("finish", this.play.bind(this));
   }
 
   onUserJoinOrLeave() {
-    const members = this.channel.members.size;
-    this.shouldPlay = members >= 2;
+    console.log("Event");
+    const members = Array.from(this.channel.members.keys()).filter(
+      (x) => x !== this.channel.client.user?.id
+    ).length;
+    this.shouldPlay = members >= 1;
     this.play();
   }
 }
 
-class AirHornCommand extends Command {
-  player: AirHornPlayer;
-  constructor(player: AirHornPlayer) {
-    super({
-      name: "join-air-horn",
-      description: "Join an air horn room",
-    });
-    this.player = player;
-  }
-
-  async run(int: Interaction) {
-    if (!int.member.roles.cache.has(env.adminRole)) {
-      int.say("You do not have permission to use this command");
-      return;
-    }
-
-    this.player.connect();
-  }
-}
-
 async function main() {
-  const client = new CommandClient({
-    owner: env.owner,
-    guild: env.guild,
-    token: env.token,
+  const client = new Client();
+  client.on("ready", () => {
+    console.log("Logged in as", client.user?.tag);
   });
-
-  await client.start({ noReconcileCommands: true });
+  await client.login(env.token);
 
   const voiceChannel = (await client.channels.fetch(
     env.voiceChannel
-  )) as Discord.VoiceChannel;
-
+  )) as VoiceChannel;
   const player = new AirHornPlayer(voiceChannel);
-  client.registry.registerCommands([new AirHornCommand(player)]);
-  client.reconcileCommands();
   client.on("voiceStateUpdate", player.onUserJoinOrLeave.bind(player));
-  player.connect();
 }
 main();
