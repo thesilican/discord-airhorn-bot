@@ -58,7 +58,6 @@ class AirHornPlayer {
       this.dispatcher = null;
       return;
     }
-    console.log("Playing");
     this.dispatcher = this.connection.play(airHornStream());
     this.dispatcher.on("finish", this.play.bind(this));
   }
