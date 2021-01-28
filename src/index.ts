@@ -62,7 +62,6 @@ class AirHornPlayer {
   }
 
   onUserJoinOrLeave() {
-    console.log("Event");
     const members = Array.from(this.channel.members.keys()).filter(
       (x) => x !== this.channel.client.user?.id
     ).length;
