@@ -1,74 +1,19 @@
-import Discord, { Client, VoiceChannel } from "discord.js";
+import {
+  Client,
+  StreamDispatcher,
+  VoiceChannel,
+  VoiceConnection,
+} from "discord.js";
 import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
 import env from "./env";
+import ytdl from "ytdl-core";
 
 const airHornMp3 = fs.readFileSync(path.join(process.cwd(), "air-horn.mp3"));
 const airHornStream = () => Readable.from(airHornMp3);
-
-class AirHornPlayer {
-  channel: Discord.VoiceChannel;
-  connection: Discord.VoiceConnection | null;
-  dispatcher: Discord.StreamDispatcher | null;
-  shouldPlay: boolean;
-
-  constructor(channel: Discord.VoiceChannel) {
-    this.channel = channel;
-    this.connection = null;
-    this.shouldPlay = false;
-    this.dispatcher = null;
-  }
-
-  async connect() {
-    if (this.connection) {
-      this.disconnect();
-    }
-
-    let connection: Discord.VoiceConnection;
-    try {
-      connection = await this.channel.join();
-    } catch (err) {
-      console.error("Error connecting to voice channel:", err);
-      return;
-    }
-    connection.on("disconnect", this.onDisconnect.bind(this));
-    this.connection = connection;
-    this.play();
-  }
-
-  disconnect() {
-    if (!this.connection) return;
-    this.connection.removeAllListeners();
-    this.connection.disconnect();
-    this.connection = null;
-  }
-
-  onDisconnect() {
-    this.connection = null;
-  }
-
-  async play() {
-    if (!this.shouldPlay) {
-      this.disconnect();
-      this.dispatcher = null;
-      return;
-    }
-    if (!this.connection) {
-      await this.connect();
-    }
-    this.dispatcher = this.connection!.play(airHornStream());
-    this.dispatcher.on("finish", this.play.bind(this));
-  }
-
-  onUserJoinOrLeave() {
-    const members = Array.from(this.channel.members.keys()).filter(
-      (x) => x !== this.channel.client.user?.id
-    ).length;
-    this.shouldPlay = members >= 1;
-    this.play();
-  }
-}
+const despacitoStream = () =>
+  ytdl("https://www.youtube.com/watch?v=gm3-m2CFVWM", { filter: "audioonly" });
 
 async function main() {
   const client = new Client();
@@ -77,10 +22,63 @@ async function main() {
   });
   await client.login(env.token);
 
-  const voiceChannel = (await client.channels.fetch(
+  const channel = (await client.channels.fetch(
     env.voiceChannel
   )) as VoiceChannel;
-  const player = new AirHornPlayer(voiceChannel);
-  client.on("voiceStateUpdate", player.onUserJoinOrLeave.bind(player));
+  let connection: VoiceConnection | null = null;
+  let dispatcher: StreamDispatcher | null = null;
+  let userConnected = false;
+  let specialUserConnected = false;
+  const connect = async () => {
+    connection = await channel.join();
+    connection.on("disconnect", () => {
+      connection = null;
+      dispatcher = null;
+    });
+  };
+  const disconnect = () => {
+    connection?.disconnect();
+    connection = null;
+    dispatcher = null;
+  };
+  const play = (track: "horn" | "despacito") => {
+    if (userConnected && connection) {
+      if (dispatcher) {
+        // Kill any current tracks playing
+        dispatcher.removeAllListeners();
+        dispatcher.end();
+      }
+      let stream = track === "despacito" ? despacitoStream() : airHornStream();
+      dispatcher = connection.play(stream).on("finish", () => play(track));
+    }
+  };
+  client.on("voiceStateUpdate", async () => {
+    const members = channel.members.filter(
+      (x) => x.id !== channel.client.user?.id
+    );
+    const hasUser = members.size >= 1;
+    const hasSpecialUser = members.has(env.specialUser);
+    const userJoin = hasUser && !userConnected;
+    const specialUserJoin = hasSpecialUser && !specialUserConnected;
+    const userLeave = !hasUser && userConnected;
+    const specialUserLeave = !hasSpecialUser && specialUserConnected;
+    userConnected = hasUser;
+    specialUserConnected = hasSpecialUser;
+
+    if (userJoin) {
+      await connect();
+      if (specialUserJoin) {
+        play("despacito");
+      } else {
+        play("horn");
+      }
+    } else if (specialUserJoin) {
+      play("despacito");
+    } else if (userLeave) {
+      disconnect();
+    } else if (specialUserLeave) {
+      play("horn");
+    }
+  });
 }
 main();
