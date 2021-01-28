@@ -106,5 +106,6 @@ async function main() {
   client.registry.registerCommands([new AirHornCommand(player)]);
   client.reconcileCommands();
   client.on("voiceStateUpdate", player.onUserJoinOrLeave.bind(player));
+  player.connect();
 }
 main();
