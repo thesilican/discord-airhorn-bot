@@ -80,5 +80,16 @@ async function main() {
       play("horn");
     }
   });
+
+  // Handle SIGINT, SIGTERM
+  let exited = false;
+  const handleExit = () => {
+    if (exited) return;
+    exited = true;
+    client.destroy();
+    console.log("Gracefully exited");
+  };
+  process.on("SIGINT", handleExit);
+  process.on("SIGTERM", handleExit);
 }
 main();
